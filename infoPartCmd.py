@@ -8,9 +8,7 @@
 
 
 
-import os, shutil
-import importlib
-import codecs
+import os, json
 
 from PySide import QtGui, QtCore
 import FreeCADGui as Gui
@@ -19,39 +17,48 @@ from FreeCAD import Console as FCC
 
 import Asm4_libs as Asm4
 import InfoKeys
-import infoConfUser as ConfUser
 
-# protection against update of userconf
+# protection against update of user configuration
 
 ### to have the dir of external configuration file
-wbPath = Asm4.wbPath
-ConfUserFile       = os.path.join( wbPath, 'infoConfUser.py' )
-ConfUserFileInit   = os.path.join( wbPath, 'infoConfUserInit.py' )
+ConfUserDir = os.path.join(App.getUserAppDataDir(),'Templates')
+ConfUserFilename = "Asm4_infoPartConf.json"
+ConfUserFilejson = os.path.join(ConfUserDir, ConfUserFilename)
+
+
 ### try to open existing external configuration file of user
 try :
-    fichier = open(ConfUserFile, 'r')
-    fichier.close()
-    fichier.close()
+    file = open(ConfUserFilejson, 'r')
+    file.close()
 ### else make the default external configuration file
 except :
-    shutil.copyfile( ConfUserFileInit , ConfUserFile )
-
-
-
+    partInfoDef = dict()
+    for prop in InfoKeys.partInfo:
+        partInfoDef.setdefault(prop,{'userData':prop + 'User','active':True})
+    os.mkdir(ConfUserDir)
+    file = open(ConfUserFilejson, 'x')
+    json.dump(partInfoDef,file)
+    file.close()
+    
+"""
+now user configuration is :
+file = open(ConfUserFilejson, 'r')
+user configuration = json.load(file).copy()
+file.close()
+"""
 
 """
-try :
-    fichier = open(InfoScript, 'r')
-    fichier.close()
-    import InfoScript as autoInfo
-### else make the default external configuration file
-except :
-    shutil.copyfile( InfoScriptInit ,InfoScript)
-    import InfoScript as autoInfo
-
-### but for the moment use internal configuration file
-import InfoScriptInit as autoInfo
+    +-----------------------------------------------+
+    |                  The Help Tools               |
+    +-----------------------------------------------+
 """
+def writeXml(text):
+    text=text.encode('unicode_escape').decode().replace('\\','_x_m_l_')
+    return text
+
+def decodeXml(text):
+    text=text.replace('_x_m_l_','\\').encode().decode('unicode_escape')
+    return text
 
 """
     +-----------------------------------------------+
@@ -99,7 +106,9 @@ class infoPartUI():
        
         # hey-ho, let's go
         self.part = Asm4.getSelectedContainer()
-        self.infoKeysUser = importlib.reload(ConfUser).partInfo.copy()
+        file = open(ConfUserFilejson, 'r')
+        self.infoKeysUser = json.load(file).copy()
+        file.close()
         self.makePartInfo(self,self.part)
         self.infoTable = []
         self.getPartInfo()
@@ -113,8 +122,11 @@ class infoPartUI():
         for prop in self.part.PropertiesList:
             if self.part.getGroupOfProperty(prop)=='PartInfo' :
                 if self.part.getTypeIdOfProperty(prop)=='App::PropertyString' :
-                    value = self.part.getPropertyByName(prop)
-                    self.infoTable.append([prop,value])
+                    for propuser in self.infoKeysUser :
+                        if self.infoKeysUser.get(propuser).get('userData') == prop :
+                            if self.infoKeysUser.get(propuser).get('active'):
+                                value = self.part.getPropertyByName(prop)
+                                self.infoTable.append([prop,value])
 
     # add the default part information
     def makePartInfo( self, object , reset=False ):
@@ -148,6 +160,26 @@ class infoPartUI():
         Gui.Control.closeDialog()
         Gui.Control.showDialog( infoPartConfUI() )
         #pass
+        
+    def reInit(self):
+        #init of list of all Properties
+        List = self.part.PropertiesList
+        listpi=[]
+        #make list of PartInfo Properties
+        for prop in List :
+            if self.part.getGroupOfProperty(prop) == 'PartInfo' :
+                listpi.append(prop)
+        # delete all PartInfo Properties
+        for suppr in listpi :
+            self.part.removeProperty(suppr)
+        # message for user
+        mb = QtGui.QMessageBox()
+        mb.setText("Your fields \n has been re-initilize")
+        mb.setWindowTitle("RE-INITIALISATION")
+        mb.exec_() 
+        # close
+        self.finish()
+        
 
     # InfoDefault
     def infoDefault(self):
@@ -188,7 +220,7 @@ class infoPartUI():
                         propValue = QtGui.QLineEdit()
                         propValue.setText( prop[1] )
                         checkLayout.addWidget(propValue)
-                        self.formLayout.addRow(QtGui.QLabel(prop[0]),checkLayout)
+                        self.formLayout.addRow(QtGui.QLabel(decodeXml(prop[0])),checkLayout)
                         self.infos.append(propValue)
 
         self.mainLayout.addLayout(self.formLayout)
@@ -197,9 +229,11 @@ class infoPartUI():
         # Buttons
         self.buttonsLayout = QtGui.QHBoxLayout()
         self.confFields = QtGui.QPushButton('Config')
+        self.reinit = QtGui.QPushButton('re-init')
+        self.reinit.setToolTip('To re-initialize your PartInfo Field of your part')
         self.autoFill = QtGui.QPushButton('auto-filling')
         self.buttonsLayout.addWidget(self.confFields)
-        self.buttonsLayout.addStretch()
+        self.buttonsLayout.addWidget(self.reinit)
         self.buttonsLayout.addWidget(self.autoFill)
 
         self.mainLayout.addLayout(self.buttonsLayout)
@@ -207,10 +241,17 @@ class infoPartUI():
 
         # Actions
         self.confFields.clicked.connect(self.editKeys)
+        self.reinit.clicked.connect(self.reInit)
         self.autoFill.clicked.connect(self.infoDefault)
-        
-        self.infoDefault()
-        self.addNew()
+        test=False
+        try:
+            if self.infoTable[0][1]=='':
+                test=True
+        except IndexError:
+            test=True
+        if test :
+            self.infoDefault()
+            self.addNew()
 
 class infoPartConfUI():
 
@@ -222,8 +263,11 @@ class infoPartConfUI():
         self.form.setWindowTitle("Edit Part Info Configuration")
        
         # hey-ho, let's go
-        self.infoKeysDefault = InfoKeys.partInfo.copy()        
-        self.infoKeysUser = importlib.reload(ConfUser).partInfo.copy()
+        self.infoKeysDefault = InfoKeys.partInfo.copy()
+        self.infoToolTip = InfoKeys.infoToolTip.copy()
+        file = open(ConfUserFilejson, 'r')
+        self.infoKeysUser = json.load(file).copy()
+        file.close()
         # create a dict() of defaultinfokeys and userinfokeys
         self.confTemplate = dict()
         self.confTemplate = self.infoKeysUser.copy()
@@ -264,28 +308,17 @@ class infoPartConfUI():
         # creation of dict() for user config file
         config=dict()
         for prop in self.confTemplate:
-            config.setdefault(prop,{'userData':self.infos[i].text().replace(" ", "_"),'active':self.checker[i].isChecked()})
+            uData=writeXml(self.infos[i].text())
+            config.setdefault(prop,{'userData':uData.replace(" ", "_"),'active':self.checker[i].isChecked()})
             i+=1
         # write user config file
-        wConf = codecs.open(ConfUserFile, 'w','utf-8')
-        wConf.write(\
-"#!/usr/bin/env python3\n\
-# coding: utf-8\n\
-#\n\
-# LGPL\n\
-#\n\
-# InfoConfUser.py\n\
-\n\
-\n\
-#    +-----------------------------------------------+\n\
-#    |    User Config - Changing from partInfoUI     |\n\
-#    +-----------------------------------------------+\n\
-\n\
-\n\
-partInfo = \\\n" + str(config) )
-        wConf.close()
+        file = open(ConfUserFilejson, 'w')
+        json.dump(config,file)
+        file.close()
         # write in infoKeysUser
-        self.infoKeysUser = importlib.reload(ConfUser).partInfo.copy()
+        file = open(ConfUserFilejson, 'r')
+        self.infoKeysUser = json.load(file).copy()
+        file.close()
         # message for user
         mb = QtGui.QMessageBox()
         mb.setText("Your configuration \n has been saved")
@@ -333,16 +366,7 @@ partInfo = \\\n" + str(config) )
     # Define the deleteField action   
     def deleteField(self):
         # delete all ref line and infos.text()
-        delField = self.suppCombo.currentText()
-        # door for not delete Asm4 autofield
-        for prop in self.confTemplate:
-            if self.confTemplate.get(prop).get('userData') == delField:
-                if prop[0:3] != 'man' :
-                    mb = QtGui.QMessageBox()
-                    mb.setText(" You can not DELETE \n Asm4 Auto-infoField \n But you can DISABLE IT")
-                    mb.setWindowTitle("UNABLE TO DELETE")
-                    mb.exec_() 
-                    return
+        delField = writeXml(self.suppCombo.currentText())
         i=0
         for prop in self.confTemplate:
             if self.confTemplate.get(prop).get('userData') == delField:
@@ -352,7 +376,7 @@ partInfo = \\\n" + str(config) )
                 self.infos.remove(self.infos[i])
                 self.checker[i].deleteLater()
                 self.checker.remove(self.checker[i])
-                self.suppCombo.removeItem(i)
+                self.suppCombo.removeItem(i-len(self.infoKeysDefault))
                 self.refField = str(prop)
             i+=1
         # delete it on confTemplate
@@ -387,6 +411,7 @@ partInfo = \\\n" + str(config) )
 
     # Define the iUI
     def drawConfUI(self):
+        # init container
         self.label=[]
         self.infos=[]
         self.checker=[]
@@ -405,6 +430,7 @@ partInfo = \\\n" + str(config) )
         i=1
         for prop in self.confTemplate:
             default = QtGui.QLabel(prop)
+            default.setToolTip(self.infoToolTip.get(prop))
             self.gridLayout.addWidget(default,i,0)
             self.label.append(default)
             i+=1
@@ -420,7 +446,7 @@ partInfo = \\\n" + str(config) )
         i=1
         for prop in self.confTemplate:
             propValue = QtGui.QLineEdit()
-            propValue.setText( self.confTemplate.get(prop).get('userData') )
+            propValue.setText( decodeXml(self.confTemplate.get(prop).get('userData')) )
             self.gridLayout.addWidget(propValue,i,1)
             self.infos.append(propValue)
             i+=1
@@ -432,7 +458,8 @@ partInfo = \\\n" + str(config) )
         # delete
         self.suppCombo =  QtGui.QComboBox()
         for prop in self.confTemplate:
-            self.suppCombo.addItem(self.confTemplate.get(prop).get('userData'))
+            if prop[0:3] == 'man' :
+                self.suppCombo.addItem(decodeXml(self.confTemplate.get(prop).get('userData')))
         self.gridLayoutButtons.addWidget(self.suppCombo,1,1)
         
         # make a third column of QCheckBox for activate or not
