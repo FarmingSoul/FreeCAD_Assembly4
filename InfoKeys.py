@@ -5,56 +5,37 @@
 #
 # libraries for FreeCAD's Assembly 4 workbench
 
-import os, json
+import os, shutil
+import Asm4_libs as Asm4
 
-import FreeCAD as App
-import infoPartCmd
+# protection against update of userconf
 
-
-# Autofilling info ref
-partInfo =[     'LabelDoc',                 \
-                'LabelPart',                \
-                'PadLength',                \
-                'ShapeLength']
-
-infoToolTip = {'LabelDoc':'Return the Label of Document','LabelPart':'Return the Label of Part','PadLength':'Return the Length of Pad','ShapeLength':'Return the Length of Shape'}
-
-# protection against update of user configuration
 ### to have the dir of external configuration file
-ConfUserDir = os.path.join(App.getUserAppDataDir(),'Templates')
-ConfUserFilename = "Asm4_infoPartConf.json"
-ConfUserFilejson = os.path.join(ConfUserDir, ConfUserFilename)
-
-
+wbPath = Asm4.wbPath
+ConfUserFile       = os.path.join( wbPath, 'infoConfUser.py' )
+ConfUserFileInit   = os.path.join( wbPath, 'infoConfUserInit.py' )
 ### try to open existing external configuration file of user
 try :
-    file = open(ConfUserFilejson, 'r')
-    file.close()
+    fichier = open(ConfUserFile, 'r')
+    fichier.close()
+    fichier.close()
 ### else make the default external configuration file
 except :
-    partInfoDef = dict()
-    for prop in partInfo:
-        partInfoDef.setdefault(prop,{'userData':prop + 'User','active':True})
-    try:
-        os.mkdir(ConfUserDir)
-    except:
-        pass
-    file = open(ConfUserFilejson, 'x')
-    json.dump(partInfoDef,file)
-    file.close()
+    shutil.copyfile( ConfUserFileInit , ConfUserFile )
     
+import infoConfUser
 
-### now user configuration is :
-file = open(ConfUserFilejson, 'r')
-infoKeysUser = json.load(file).copy()
-file.close()
+import infoPartCmd
+
+# Autofilling info ref
+
+partInfo =[     'LabelDoc',                 \
+                'LabelPart' ,               \
+                'newUpdateofAsm4' ]
 
 def infoDefault(self):
     ### auto filling module
-    ### load infoKeysUser    
-    file = open(ConfUserFilejson, 'r')
-    infoKeysUser = json.load(file).copy()
-    file.close()
+    
     ### part variable creation
     try :
         self.TypeId
@@ -79,92 +60,43 @@ def infoDefault(self):
                     except NameError :
                         print('there is no Sketch on a Pad of : ',PART.FullName )
 
+
     ### start all autoinfofield
     LabelDoc(self,PART,DOC)
     LabelPart(self,PART)
-    PadLength(self,PART,PAD)
-    ShapeLength(self,PART,SKETCH)
+    
 """
 how make a new autoinfofield :
 
 ref newautoinfofield name in partInfo[]
 
-make a description in infoToolTip = {}
-
-put newautoinfofield name in infoDefault() at the end with the right arg (PAD,SKETCH...)
+ref newautoinfofield name in infoDefault() at the end
 
 write new def like that :
 
-def newautoinfofieldname(self,PART(option : DOC , BODY , PAD , SKETCH):
+def newautoinfofield(self,PART (opt : DOC , BODY , PAD , SKETCH):
 ###you can use DOC - PART - BODY - PAD - SKETCH
-    auto_info_field = infoKeysUser.get('newautoinfofieldname').get('userData')
-    auto_info_fill = newautoinfofield information
+    auto_info = string you want to write in field
     try:
         ### if the command comes from makeBom write autoinfo directly on Part
         self.TypeId
-        setattr(PART,auto_info_field,str(auto_info_fill))
+        auto_info = string 
+        setattr(PART,'newautoinfofield name',auto_info)
     except AttributeError:
         ### if the command comes from infoPartUI write autoinfo on autofilling field on UI
         try :
         ### if field is actived
             for i in range(len(self.infoTable)):
-                if self.infoTable[i][0]== auto_info_field :
-                    self.infos[i].setText(str(auto_info_fill))
+                if self.infoTable[i][0]=='newautoinfofield name':
+                    self.infos[i].setText(auto_info)
         except AttributeError:
         ### if field is not actived
             pass
 
 """
-
-def ShapeLength(self,PART,SKETCH):
-###you can use DOC - PART - BODY - PAD - SKETCH
-    auto_info_field = infoKeysUser.get('ShapeLength').get('userData')
-    try :
-        auto_info_fill = SKETCH.Shape.Length
-    except AttributeError:
-        return
-    try:
-        ### if the command comes from makeBom write autoinfo directly on Part
-        self.TypeId
-        setattr(PART,auto_info_field,str(auto_info_fill))
-    except AttributeError:
-        ### if the command comes from infoPartUI write autoinfo on autofilling field on UI
-        try :
-        ### if field is actived
-            for i in range(len(self.infoTable)):
-                if self.infoTable[i][0]== auto_info_field :
-                    self.infos[i].setText(str(auto_info_fill))
-        except AttributeError:
-        ### if field is not actived
-            pass
-            
-
-def PadLength(self,PART,PAD):
-###you can use DOC - PART - BODY - PAD - SKETCH
-    auto_info_field = infoKeysUser.get('PadLength').get('userData')
-    try :
-        auto_info_fill = PAD.Length
-    except AttributeError:
-        return
-    try:
-        ### if the command comes from makeBom write autoinfo directly on Part
-        self.TypeId
-        setattr(PART,auto_info_field,str(auto_info_fill))
-    except AttributeError:
-        ### if the command comes from infoPartUI write autoinfo on autofilling field on UI
-        try :
-        ### if field is actived
-            for i in range(len(self.infoTable)):
-                if self.infoTable[i][0]== auto_info_field :
-                    self.infos[i].setText(str(auto_info_fill))
-        except AttributeError:
-        ### if field is not actived
-            pass
-
-
         
 def LabelDoc(self,PART,DOC):
-    docLabel = infoKeysUser.get('LabelDoc').get('userData')
+    docLabel = infoConfUser.partInfo.get('LabelDoc').get('userData')
     try:
         ### if the command comes from makeBom write autoinfo directly on Part
         self.TypeId
@@ -181,7 +113,7 @@ def LabelDoc(self,PART,DOC):
             pass
         
 def LabelPart(self,PART):
-    partLabel = infoKeysUser.get('LabelPart').get('userData')
+    partLabel = infoConfUser.partInfo.get('LabelPart').get('userData')
     try:
         ### if the command comes from makeBom write autoinfo directly on Part
         self.TypeId

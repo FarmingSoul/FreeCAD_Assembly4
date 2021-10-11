@@ -7,43 +7,33 @@
 
 
 
-import os
-import json
+import os, shutil
+import importlib
 
 from PySide import QtGui, QtCore
 import FreeCADGui as Gui
 import FreeCAD as App
+from FreeCAD import Console as FCC
 
 import Asm4_libs as Asm4
 import infoPartCmd
 import InfoKeys
+import infoConfUser
 
-# protection against update of user configuration
+# protection against update of userconf
 
 ### to have the dir of external configuration file
-ConfUserDir = os.path.join(App.getUserAppDataDir(),'Templates')
-ConfUserFilename = "Asm4_infoPartConf.json"
-ConfUserFilejson = os.path.join(ConfUserDir, ConfUserFilename)
-
-
+wbPath = Asm4.wbPath
+ConfUserFile       = os.path.join( wbPath, 'infoConfUser.py' )
+ConfUserFileInit   = os.path.join( wbPath, 'infoConfUserInit.py' )
 ### try to open existing external configuration file of user
 try :
-    file = open(ConfUserFilejson, 'r')
-    file.close()
+    fichier = open(ConfUserFile, 'r')
+    fichier.close()
+    fichier.close()
 ### else make the default external configuration file
 except :
-    partInfoDef = dict()
-    for prop in InfoKeys.partInfo:
-        partInfoDef.setdefault(prop,{'userData':prop + 'User','active':True})
-    os.mkdir(ConfUserDir)
-    file = open(ConfUserFilejson, 'x')
-    json.dump(partInfoDef,file)
-    file.close()
-    
-### now user configuration is :
-file = open(ConfUserFilejson, 'r')
-infoKeysUser = json.load(file).copy()
-file.close()
+    shutil.copyfile( ConfUserFileInit , ConfUserFile )
     
 crea = infoPartCmd.infoPartUI.makePartInfo
 fill = infoPartCmd.infoPartUI.infoDefault
@@ -67,9 +57,7 @@ fill = infoPartCmd.infoPartUI.infoDefault
 class makeBOM:
     def __init__(self):
         super(makeBOM,self).__init__()
-        file = open(ConfUserFilejson, 'r')
-        self.infoKeysUser = json.load(file).copy()
-        file.close()
+        self.infoKeysUser = importlib.reload(infoConfUser).partInfo.copy()
 
     def GetResources(self):
         tooltip  = "Bill of Materials"
@@ -111,9 +99,7 @@ class makeBOM:
 ### def listParts use of Part info Edit
 
     def listParts(self,object,level=0):
-        file = open(ConfUserFilejson, 'r')
-        self.infoKeysUser = json.load(file).copy()
-        file.close()
+        self.infoKeysUser = importlib.reload(infoConfUser).partInfo.copy()
         if object == None:
             return
         if self.PartsList == None:
@@ -153,6 +139,28 @@ class makeBOM:
         return 
         self.Verbose+='Your Bill of Materials is Done\n'
 
+ 
+    """def onSave(self):
+        #pass
+        ###Saves ASCII tree to user system file
+        _path = QtGui.QFileDialog.getSaveFileName()
+        if _path[0]:
+            save_file = QtCore.QFile(_path[0])
+            if save_file.open(QtCore.QFile.ReadWrite):
+                save_fileContent = QtCore.QTextStream(save_file)
+                save_fileContent << self.BOM
+                save_file.flush()
+                save_file.close()
+                self.BOM.setPlainText("Saved to file : " + _path[0])
+            else:
+                #FCC.PrintError("ERROR : Can't open file : "+ _path[0]+'\n')
+                self.BOM.setPlainText("ERROR : Can't open file : " + _path[0])
+        else:
+            self.BOM.setPlainText("ERROR : Can't open file : " + _path[0])
+        QtCore.QTimer.singleShot(3000, lambda:self.BOM.setPlainText(self.PartsList))
+        #self.UI.close()"""
+
+
 ### def Copy - Copy on Spreadsheet
 
     def inSpreadsheet(self):
@@ -174,10 +182,7 @@ class makeBOM:
         # to write line in spreadsheet
         def wrow(drow: [str], row: int):
             for i, d in enumerate(drow):
-                if row==0:
-                    spreadsheet.set(str(chr(ord('a') + i)).upper()+str(row+1),infoPartCmd.decodeXml(str(d)))
-                else :
-                    spreadsheet.set(str(chr(ord('a') + i)).upper()+str(row+1),str(d))
+                spreadsheet.set(str(chr(ord('a') + i)).upper()+str(row+1), str(d))
         # to make list of values of dict() plist
         data = list(plist.values())
         # to write first line with keys
